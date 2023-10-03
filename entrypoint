@@ -1,0 +1,49 @@
+#!/bin/bash
+set -e
+
+pid='/var/run/postgresql/postgresql.pid'
+data_dir='/var/lib/postgresql/data'
+socket="/var/run/postgresql/.s.PGSQL.5432"
+
+if [ -z $POSTGRES_USERNAME ]; then
+    export POSTGRES_USERNAME='postgres'
+fi
+
+if [ -z $POSTGRES_PASSWORD ]; then
+    export POSTGRES_PASSWORD='postgres'
+fi
+
+if [ -z $(ls -A $data_dir) ]; then
+    initdb -D $data_dir --auth-local=trust --auth-host=scram-sha-256
+fi
+
+postgres --config-file='/etc/postgresql/postgresql.conf' &2>/dev/null
+
+while :
+do
+    if netstat -l | grep -q "$socket"; then
+        echo "started"
+        break
+    else
+        echo "aguardando..."
+        sleep 1
+    fi
+done
+
+if psql -d postgres -Atq -c "select usename from pg_user where usename='$POSTGRES_USERNAME'" | grep -q $POSTGRES_USERNAME; then
+    psql -d postgres -Atq -c "ALTER ROLE $POSTGRES_USERNAME WITH PASSWORD '$POSTGRES_PASSWORD'"
+else
+    psql -d postgres -Atq -c "CREATE ROLE $POSTGRES_USERNAME SUPERUSER LOGIN PASSWORD '$POSTGRES_PASSWORD'"
+fi
+
+if [ -f "$pid" ]; then
+    pid=$(cat $pid)
+    if [ -d "/proc/$pid" ]; then
+        kill $pid
+        while [ -d "/proc/$pid" ]; do
+            sleep 1
+        done
+    fi
+fi
+
+postgres --config-file='/etc/postgresql/postgresql.conf'

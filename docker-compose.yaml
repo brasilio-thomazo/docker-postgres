@@ -1,0 +1,14 @@
+version: "3.8"
+services:
+  postgres.test:
+    container_name: postgres.test
+    image: devoptimus/postgres
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: "postgres"
+    environment:
+      - POSTGRES_PASSWORD:postgres
+      - POSTGRES_USER:postgres
+    ports:
+      - 5432:5432
