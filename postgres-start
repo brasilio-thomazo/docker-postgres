@@ -1,0 +1,6 @@
+#!/bin/bash
+if [ -z "$PGDATA" ]; then
+    export PGDATA="/var/lib/postgresql/data"
+fi
+
+postgres -D $PGDATA

@@ -1,49 +1,158 @@
 #!/bin/bash
 set -e
 
-pid='/var/run/postgresql/postgresql.pid'
-data_dir='/var/lib/postgresql/data'
-socket="/var/run/postgresql/.s.PGSQL.5432"
+is_replicant() {
+    if [ -z $MASTER_SERVER ]; then
+        return 1
+    fi
+    return 0
+}
 
-if [ -z $POSTGRES_USERNAME ]; then
-    export POSTGRES_USERNAME='postgres'
-fi
+update_postgresql_config() {
+    local filename="$PGDATA/postgresql.conf"
+    local connstr="host=$MASTER_SERVER port=$MASTER_PORT user=$REPLICANT_USERNAME password=$REPLICANT_PASSWORD"
+    connstr="$connstr sslmode=prefer sslcompression=0 sslsni=1 ssl_min_protocol_version=TLSv1.2 gssencmode=disable"
+    connstr="$connstr krbsrvname=postgres target_session_attrs=any"
 
-if [ -z $POSTGRES_PASSWORD ]; then
-    export POSTGRES_PASSWORD='postgres'
-fi
+    sed -i "s/#listen_addresses/listen_addresses/" $filename
+    sed -i "s/listen_addresses = .*/listen_addresses = '*'/" $filename
+    sed -i "s/#password_encryption/password_encryption/" $filename
+    sed -i "s/password_encryption = .*/password_encryption = scram-sha-256/" $filename
+    sed -i "s/#log_destination = .*/log_destination = 'stderr'/" $filename
+    sed -i "s/#client_min_messages = .*/client_min_messages = notice/" $filename
+    sed -i "s/#log_statement = .*/log_statement = '$LOG_STATEMENT'/" $filename
+    if is_replicant
+    then
+        sed -i "s/#wal_level = .*/wal_level = replica/" $filename
+        sed -i "s/#max_wal_senders/max_wal_senders/" $filename
+        sed -i "s/max_wal_senders = [0-9]+/max_wal_senders = $MAX_WALL_SENDER/" $filename
+        sed -i "s/#hot_standby = .*/hot_standby = on/" $filename
+    fi
+    return 0
+}
 
-if [ -z $(ls -A $data_dir) ]; then
-    initdb -D $data_dir --auth-local=trust --auth-host=scram-sha-256
-fi
+update_conninfo() {
+    local filename="$PGDATA/postgresql.conf"
+}
 
-postgres --config-file='/etc/postgresql/postgresql.conf' &2>/dev/null
+update_pg_hba() {
+    local filename="$PGDATA/pg_hba.conf"
+    local route=$(ip route | grep -v default | cut -d ' ' -f 1)
 
-while :
-do
-    if netstat -l | grep -q "$socket"; then
-        echo "started"
-        break
+    if [ -n "$route" ]; then
+        echo -e "host\tall\t\t$REPLICANT_USERNAME\t\t$route\t\ttrust" >> $filename
+        echo -e "host\treplication\t$REPLICANT_USERNAME\t\t$route\t\ttrust" >> $filename
+    fi
+
+    if ! grep -c "0.0.0.0/0" $filename; then
+         echo -e "host\tall\t\tall\t\t0.0.0.0/0\t\tscram-sha-256" >> $filename
+         echo -e "host\treplication\tall\t\t0.0.0.0/0\t\tscram-sha-256" >> $filename
+    fi
+}
+
+prepare_directory() {
+    if [ ! -d "$PGDATA" ]; then
+        doas mkdir -p $PGDATA
+    fi
+
+    if [ "$(stat -c '%u' $PGDATA)" -ne "$(id -u)" ]; then
+        doas chown postgres:postgres $PGDATA
+    fi
+
+    if [ "$(stat -c '%g' $PGDATA)" -ne "$(id -g)" ]; then
+        doas chown postgres:postgres $PGDATA
+    fi
+
+    if [ "$(stat -c '%a' $PGDATA)" -ne "700" ]; then
+        doas chmod 700 $PGDATA
+    fi
+}
+
+init_db() {
+    prepare_directory
+    if ! pg_controldata; then
+        pg_ctl -o "--auth-local=trust --auth-host=trust" init
+    fi
+    update_pg_hba
+    update_postgresql_config
+}
+
+wait_master() {
+    while :
+    do
+        if pg_isready -q -U $REPLICANT_USERNAME -h $MASTER_SERVER -p $MASTER_PORT -d postgres; then
+            break;
+        else sleep 2; fi
+    done
+}
+
+init_replicant() {
+    local sql="SELECT slot_name FROM pg_replication_slots"
+    local slot=""
+    prepare_directory
+    wait_master
+    if ! pg_controldata; then
+        export PGPASSWORD=$POSTGRES_PASSWORD
+        slot=$(psql -U $POSTGRES_USERNAME -h $MASTER_SERVER -p $MASTER_PORT -t -d postgres -c "$sql")
+        echo "SLOT: $slot"
+        if [ -n $slot_name ]; then
+            echo "creating slot $SLOT_NAME"
+            pg_basebackup -D $PGDATA -U $REPLICANT_USERNAME -h $MASTER_SERVER -p $MASTER_PORT -R -C --checkpoint=fast --slot=$SLOT_NAME
+        else
+            echo "using slot $SLOT_NAME"
+            pg_basebackup -D $PGDATA -U $REPLICANT_USERNAME -h $MASTER_SERVER -p $MASTER_PORT -R --checkpoint=fast --slot=$slot
+        fi
+    fi
+    update_pg_hba
+    update_postgresql_config
+}
+
+start_server() {
+     if  is_replicant; then
+        update_conninfo
+        wait_master
+        return 0
+    fi
+    pg_ctl -o '-p 5433' start
+    export PGPASSWORD=$POSTGRES_PASSWORD
+    return 0
+}
+
+create_users() {
+     if  is_replicant; then
+        return 0
+    fi
+
+    if psql -d postgres -p 5433 -t -c "\du $REPLICANT_USERNAME" | cut -d \| -f 1 | grep -qw $REPLICANT_USERNAME; then
+        psql -d postgres -p 5433 -q -c "ALTER ROLE $REPLICANT_USERNAME WITH PASSWORD '$REPLICANT_PASSWORD'"
     else
-        echo "aguardando..."
-        sleep 1
+        psql -d postgres -p 5433 -tq -c "CREATE USER $REPLICANT_USERNAME REPLICATION LOGIN PASSWORD '$REPLICANT_PASSWORD'"
     fi
-done
 
-if psql -d postgres -Atq -c "select usename from pg_user where usename='$POSTGRES_USERNAME'" | grep -q $POSTGRES_USERNAME; then
-    psql -d postgres -Atq -c "ALTER ROLE $POSTGRES_USERNAME WITH PASSWORD '$POSTGRES_PASSWORD'"
+    if psql -d postgres -p 5433 -t -c "\du $POSTGRES_USERNAME" | cut -d \| -f 1 | grep -qw $POSTGRES_USERNAME; then
+        psql -d postgres -p 5433 -q -c "ALTER ROLE $POSTGRES_USERNAME WITH PASSWORD '$POSTGRES_PASSWORD'"
+    else
+        psql -d postgres -p 5433 -tq -c "CREATE USER $POSTGRES_USERNAME SUPERUSER LOGIN PASSWORD '$POSTGRES_PASSWORD'"
+    fi
+    return 0
+}
+
+stop_server() {
+    if  is_replicant; then
+        return 0
+    fi
+    pg_ctl -m fast stop
+    return 0
+}
+
+if is_replicant; then
+    init_replicant
 else
-    psql -d postgres -Atq -c "CREATE ROLE $POSTGRES_USERNAME SUPERUSER LOGIN PASSWORD '$POSTGRES_PASSWORD'"
+    init_db
 fi
 
-if [ -f "$pid" ]; then
-    pid=$(cat $pid)
-    if [ -d "/proc/$pid" ]; then
-        kill $pid
-        while [ -d "/proc/$pid" ]; do
-            sleep 1
-        done
-    fi
-fi
+start_server
+create_users
+stop_server
 
-postgres --config-file='/etc/postgresql/postgresql.conf'
+exec "$@"
