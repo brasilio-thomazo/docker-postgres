@@ -45,5 +45,3 @@ services:
     depends_on:
       postgres-reader:
         condition: service_healthy
-    ports:
-      - 5432

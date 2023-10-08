@@ -37,12 +37,14 @@ update_conninfo() {
 
 update_pg_hba() {
     local filename="$PGDATA/pg_hba.conf"
-    local route=$(ip route | grep -v default | cut -d ' ' -f 1)
+    local routes=$(ip route | grep -v default | cut -d ' ' -f 1)
 
-    if [ -n "$route" ]; then
-        echo -e "host\tall\t\t$REPLICANT_USERNAME\t\t$route\t\ttrust" >> $filename
-        echo -e "host\treplication\t$REPLICANT_USERNAME\t\t$route\t\ttrust" >> $filename
-    fi
+    for route in $routes; do
+        if grep -qwv "$route" $filename; then
+            echo -e "host\tall\t\t$REPLICANT_USERNAME\t\t$route\t\ttrust" >> $filename
+            echo -e "host\treplication\t$REPLICANT_USERNAME\t\t$route\t\ttrust" >> $filename
+        fi
+    done
 
     if ! grep -c "0.0.0.0/0" $filename; then
          echo -e "host\tall\t\tall\t\t0.0.0.0/0\t\tscram-sha-256" >> $filename

@@ -12,10 +12,7 @@ ENV REPLICATION_PASSWORD=replicant
 ENV MAX_WALL_SENDER=10
 ENV SLOT_NAME=master
 ENV LOG_STATEMENT=all
-
 COPY entrypoint /usr/bin/
-COPY postgres-start /usr/bin/
-
 RUN apk add --no-cache icu-data-full tzdata bash tzdata musl-locales \
     postgresql postgresql-contrib shadow doas curl \
     && cp  /usr/share/zoneinfo/America/Sao_Paulo /etc/localtime \
@@ -35,7 +32,6 @@ EXPOSE 5432
 
 FROM postgres as jit
 RUN doas apk add --no-cache postgresql-jit
-EXPOSE 5432
 
 FROM haproxy:alpine as haproxy
 COPY haproxy.cfg /usr/local/etc/haproxy/haproxy.cfg
