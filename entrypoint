@@ -40,7 +40,7 @@ update_pg_hba() {
     local routes=$(ip route | grep -v default | cut -d ' ' -f 1)
 
     for route in $routes; do
-        if grep -qwv "$route" $filename; then
+        if grep -qwv "$route" $filename && grep -q '/' $route; then
             echo -e "host\tall\t\t$REPLICANT_USERNAME\t\t$route\t\ttrust" >> $filename
             echo -e "host\treplication\t$REPLICANT_USERNAME\t\t$route\t\ttrust" >> $filename
         fi
