@@ -80,6 +80,7 @@ init_db() {
 }
 
 wait_master() {
+    export PGPASSWORD=$REPLICANT_PASSWORD
     while :
     do
         if pg_isready -q -U $REPLICANT_USERNAME -h $MASTER_SERVER -p $MASTER_PORT -d postgres; then
@@ -96,12 +97,11 @@ init_replicant() {
     if ! pg_controldata; then
         export PGPASSWORD=$POSTGRES_PASSWORD
         slot=$(psql -U $POSTGRES_USERNAME -h $MASTER_SERVER -p $MASTER_PORT -t -d postgres -c "$sql")
-        echo "SLOT: $slot"
         if [ -n $slot_name ]; then
-            echo "creating slot $SLOT_NAME"
+            export PGPASSWORD=$REPLICANT_PASSWORD
             pg_basebackup -D $PGDATA -U $REPLICANT_USERNAME -h $MASTER_SERVER -p $MASTER_PORT -R -C --checkpoint=fast --slot=$SLOT_NAME
         else
-            echo "using slot $SLOT_NAME"
+            export PGPASSWORD=$REPLICANT_PASSWORD
             pg_basebackup -D $PGDATA -U $REPLICANT_USERNAME -h $MASTER_SERVER -p $MASTER_PORT -R --checkpoint=fast --slot=$slot
         fi
     fi
