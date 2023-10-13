@@ -99,10 +99,12 @@ init_replicant() {
         slot=$(psql -U $POSTGRES_USERNAME -h $MASTER_SERVER -p $MASTER_PORT -t -d postgres -c "$sql")
         if [ -n $slot_name ]; then
             export PGPASSWORD=$REPLICANT_PASSWORD
+            echo "slot not exists"
             pg_basebackup -D $PGDATA -U $REPLICANT_USERNAME -h $MASTER_SERVER -p $MASTER_PORT -R -C --checkpoint=fast --slot=$SLOT_NAME
         else
             export PGPASSWORD=$REPLICANT_PASSWORD
-            pg_basebackup -D $PGDATA -U $REPLICANT_USERNAME -h $MASTER_SERVER -p $MASTER_PORT -R --checkpoint=fast --slot=$slot
+            echo "slot exists"
+            pg_basebackup -D $PGDATA -U $REPLICANT_USERNAME -h $MASTER_SERVER -p $MASTER_PORT -R --checkpoint=fast
         fi
     fi
     update_pg_hba
