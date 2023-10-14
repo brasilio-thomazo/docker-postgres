@@ -100,7 +100,7 @@ init_replicant() {
         if [ -n $slot ]; then
             echo "Slot exists [$slot]"
             export PGPASSWORD=$REPLICANT_PASSWORD
-            pg_basebackup -D $PGDATA -U $REPLICANT_USERNAME -h $MASTER_SERVER -p $MASTER_PORT -R --checkpoint=fast --slot=$slot
+            pg_basebackup -D $PGDATA -U $REPLICANT_USERNAME -h $MASTER_SERVER -p $MASTER_PORT -R --checkpoint=fast
         else
             echo "Slot not exists"
             export PGPASSWORD=$REPLICANT_PASSWORD
