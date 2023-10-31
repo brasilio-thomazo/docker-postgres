@@ -2,7 +2,7 @@
 set -e
 
 is_replicant() {
-    if [ -z $MASTER_SERVER ]; then
+    if [ "$REPLICATION_MODE" = "slave" ]; then
         return 1
     fi
     return 0
@@ -10,7 +10,7 @@ is_replicant() {
 
 update_postgresql_config() {
     local filename="$PGDATA/postgresql.conf"
-    local connstr="host=$MASTER_SERVER port=$MASTER_PORT user=$REPLICANT_USERNAME password=$REPLICANT_PASSWORD"
+    local connstr="host=$MASTER_HOST port=$MASTER_PORT user=$REPLICANT_USERNAME password=$REPLICANT_PASSWORD"
     connstr="$connstr sslmode=prefer sslcompression=0 sslsni=1 ssl_min_protocol_version=TLSv1.2 gssencmode=disable"
     connstr="$connstr krbsrvname=postgres target_session_attrs=any"
 
@@ -83,7 +83,7 @@ wait_master() {
     export PGPASSWORD=$REPLICANT_PASSWORD
     while :
     do
-        if pg_isready -q -U $REPLICANT_USERNAME -h $MASTER_SERVER -p $MASTER_PORT -d postgres; then
+        if pg_isready -q -U $REPLICANT_USERNAME -h $MASTER_HOST -p $MASTER_PORT -d postgres; then
             break;
         else sleep 2; fi
     done
@@ -96,15 +96,15 @@ init_replicant() {
     wait_master
     if ! pg_controldata; then
         export PGPASSWORD=$POSTGRES_PASSWORD
-        slot=$(psql -U $POSTGRES_USERNAME -h $MASTER_SERVER -p $MASTER_PORT -t -d postgres -c "$sql")
+        slot=$(psql -U $POSTGRES_USERNAME -h $MASTER_HOST -p $MASTER_PORT -t -d postgres -c "$sql")
         if [ -n $slot ]; then
             echo "Slot exists [$slot]"
             export PGPASSWORD=$REPLICANT_PASSWORD
-            pg_basebackup -D $PGDATA -U $REPLICANT_USERNAME -h $MASTER_SERVER -p $MASTER_PORT -R --checkpoint=fast
+            pg_basebackup -D $PGDATA -U $REPLICANT_USERNAME -h $MASTER_HOST -p $MASTER_PORT -R --checkpoint=fast
         else
             echo "Slot not exists"
             export PGPASSWORD=$REPLICANT_PASSWORD
-            pg_basebackup -D $PGDATA -U $REPLICANT_USERNAME -h $MASTER_SERVER -p $MASTER_PORT -R -C --checkpoint=fast --slot=$SLOT_NAME
+            pg_basebackup -D $PGDATA -U $REPLICANT_USERNAME -h $MASTER_HOST -p $MASTER_PORT -R -C --checkpoint=fast --slot=$SLOT_NAME
         fi
     fi
     update_pg_hba

@@ -1,47 +1,35 @@
 version: "3.8"
 services:
-  postgres-reader:
-    container_name: postgres-reader
+  db-writer:
+    container_name: db-writer
+    image: devoptimus/postgres
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: "postgres"
+    env_file: .env
+    healthcheck:
+      test: ["CMD", "pg_isready", "-d", "postgres", "-p", "5432", "-q"]
+      interval: 15s
+    ports:
+      - "5432:5432"
+  db-reader:
+    container_name: db-reader
     image: devoptimus/postgres
     build:
       context: .
       dockerfile: Dockerfile
       target: "postgres"
     environment:
-      - MASTER_SERVER=postgres-writer
+      - MASTER_SERVER=db-writer
       - MASTER_PORT=5432
       - SLOT_NAME=master
     env_file: .env
     depends_on:
-      postgres-writer:
+      db-writer:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "pg_isready", "-d", "postgres", "-p", "5432", "-q"]
       interval: 15s
-      timeout: 5s
-      retries: 5
-      start_period: 5s
-  postgres-writer:
-    container_name: postgres-writer
-    image: devoptimus/postgres
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: "postgres"
-    env_file: .env
-    healthcheck:
-      test: ["CMD", "pg_isready", "-d", "postgres", "-p", "5432", "-q"]
-      interval: 15s
-      timeout: 5s
-      retries: 5
-      start_period: 5s
-  haproxy:
-    container_name: haproxy
-    image: devoptimus/haproxy
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: haproxy
-    depends_on:
-      postgres-reader:
-        condition: service_healthy
+    ports:
+      - "5433:5432"
