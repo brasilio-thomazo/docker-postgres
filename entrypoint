@@ -3,9 +3,9 @@ set -e
 
 is_replicant() {
     if [ "$REPLICATION_MODE" = "slave" ]; then
-        return 1
+        return 0
     fi
-    return 0
+    return 1
 }
 
 update_postgresql_config() {

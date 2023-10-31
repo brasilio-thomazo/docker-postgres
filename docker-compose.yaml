@@ -1,7 +1,7 @@
 version: "3.8"
 services:
-  db-writer:
-    container_name: db-writer
+  pgsql-writer:
+    container_name: pgsql-writer
     image: devoptimus/postgres
     build:
       context: .
@@ -9,27 +9,25 @@ services:
       target: "postgres"
     env_file: .env
     healthcheck:
-      test: ["CMD", "pg_isready", "-d", "postgres", "-p", "5432", "-q"]
+      test: ["CMD", "pg_isready", "-p", "5432", "-q"]
       interval: 15s
     ports:
       - "5432:5432"
-  db-reader:
-    container_name: db-reader
+  pgsql-reader:
+    container_name: pgsql-reader
     image: devoptimus/postgres
     build:
       context: .
       dockerfile: Dockerfile
       target: "postgres"
-    environment:
-      - MASTER_SERVER=db-writer
-      - MASTER_PORT=5432
-      - SLOT_NAME=master
     env_file: .env
+    environment:
+      - REPLICATION_MODE=slave
     depends_on:
-      db-writer:
+      pgsql-writer:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "pg_isready", "-d", "postgres", "-p", "5432", "-q"]
+      test: ["CMD", "pg_isready", "-p", "5432", "-q"]
       interval: 15s
     ports:
       - "5433:5432"
