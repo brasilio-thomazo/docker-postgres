@@ -88,16 +88,8 @@ initialize_database() {
 
     if ! is_replica; then
         echo "initializing master server database..."
-        initdb -D "$PGDATA" \
-            --no-instructions \
-            --username "$POSTGRES_USER" \
-            --pwfile="$pgpass" \
-            --auth-host=scram-sha-256 \
-            --auth-local=trust \
-            -c config_file="$postgresql_config" \
-            -c unix_socket_directories="/var/run/postgresql" \
-            -c listen_addresses="*" \
-            $POSTGRES_INITDB_ARGS
+        local command='initdb -D "$PGDATA" --no-instructions --username "$POSTGRES_USER" --auth-host=scram-sha-256 --auth-local=trust -c config_file="$postgresql_config" -c unix_socket_directories="/var/run/postgresql" -c listen_addresses="*" --pwfile=<(echo -n "$POSTGRES_PASSWORD") $POSTGRES_INITDB_ARGS'
+        eval $command
         if [ $? -ne 0 ]; then
             echo "failed to initialize master server database"
             exit 1
@@ -300,13 +292,6 @@ update_pg_hba() {
     done
 }
 
-if is_replica; then
-    make_pgpass "$REPLICATION_USER" "$REPLICATION_PASSWORD"
-else
-    make_pgpass "$SUPERUSER_USER" "$SUPERUSER_PASSWORD"
-    make_pgpass "$POSTGRES_USER" "$POSTGRES_PASSWORD"
-fi
-
 if ! database_is_initialized; then
     echo "Initializing database"
     initialize_database
@@ -314,6 +299,8 @@ fi
 
 if ! is_replica; then
     update_pg_hba
+    make_pgpass "$POSTGRES_USER" "$POSTGRES_PASSWORD"
+    make_pgpass "$SUPERUSER_USER" "$SUPERUSER_PASSWORD"
     start_temporary_server
     create_or_update_replicant_user
     create_replication_slot
@@ -323,6 +310,7 @@ if ! is_replica; then
 fi
 
 if is_replica; then
+    make_pgpass "$REPLICATION_USER" "$REPLICATION_PASSWORD"
     wait_for_postgres $POSTGRES_PORT 60 $REPLICATION_USER
 fi
 
