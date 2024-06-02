@@ -4,13 +4,10 @@ image?=devoptimus/postgres
 UID := $(shell id -u)
 GID := $(shell id -g)
 
-.PHONY: patch build push all
+.PHONY: build push all
 .DEFAULT_GOAL := all
 
-patch:
-	@perl src/patch.pl
-
-build: patch
+build:
 	@docker build -t $(image):$(version) -f Dockerfile --build-arg=UID=$(UID) --build-arg=GID=$(GID) .
 	@docker build -t $(image)-jit:$(version) -f Dockerfile --target=jit --build-arg=UID=$(UID) --build-arg=GID=$(GID) .
 	@docker build -t $(image) -f Dockerfile --build-arg=UID=$(UID) --build-arg=GID=$(GID) .

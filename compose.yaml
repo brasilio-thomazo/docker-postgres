@@ -7,15 +7,10 @@ services:
     ports:
       - 0:5432
     environment:
-      POSTGRES_PORT: 5432
-      POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: postgres
       REPLICATION_USER: replication
       REPLICATION_PASSWORD: replication
       REPLICATION_SLOT: slot_standby
-      SUPERUSER_USER: postgres
-      SUPERUSER_PASSWORD: postgres
     volumes:
       - ./init-script-example.sh:/entrypoint.d/init-script-example.sh
       - ./init-script-example.sql:/entrypoint.d/init-script-example.sql
@@ -30,8 +25,31 @@ services:
     environment:
       POSTGRES_HOST: master
       POSTGRES_PORT: 5432
-      POSTGRES_DB: postgres
       REPLICATION_USER: replication
       REPLICATION_PASSWORD: replication
       REPLICATION_SLOT: slot_standby
     # entrypoint: ["sleep", "infinity"]
+  pgbouncer:
+    build:
+      context: .
+      dockerfile: Dockerfile.template
+      target: pgbouncer
+    ports:
+      - 0:6432
+    mem_limit: 0.5g
+    environment:
+      PGBOUNCER_ADMIN_USER: admin
+      PGBOUNCER_ADMIN_PASSWORD: admin
+      PGBOUNCER_DATABASES: master=postgres:5432,slave=postgres:5432
+    # entrypoint: ["sleep", "infinity"]
+  haproxy:
+    build:
+      context: .
+      dockerfile: Dockerfile.template
+      target: haproxy
+    ports:
+      - 0:5432
+    mem_limit: 0.5g
+    environment:
+      HAPROXY_BACKENDS: master=master:5432,slave=slave:5432
+    entrypoint: ["sleep", "infinity"]
